@@ -10,12 +10,25 @@ OUTPUT = "epg.json.gz"
 
 def stream_convert():
     print(f"Fetching {URL}...")
-    response = requests.get(URL, stream=True)
-    
+    response = requests.get(URL, stream=True, timeout=30)
+    response.raise_for_status()
+
     print("Decompressing and parsing...")
-    
+
+    # Enforce a maximum download size to avoid memory exhaustion from a
+    # malicious or compromised server sending an unbounded response.
+    MAX_DOWNLOAD_BYTES = 500 * 1024 * 1024  # 500 MB
+    buf = BytesIO()
+    downloaded = 0
+    for chunk in response.iter_content(chunk_size=1024 * 1024):
+        downloaded += len(chunk)
+        if downloaded > MAX_DOWNLOAD_BYTES:
+            raise ValueError(f"Response exceeded maximum allowed size of {MAX_DOWNLOAD_BYTES} bytes")
+        buf.write(chunk)
+    buf.seek(0)
+
     # Decompress in chunks
-    decompressor = gzip.GzipFile(fileobj=BytesIO(response.content))
+    decompressor = gzip.GzipFile(fileobj=buf)
     xml_content = decompressor.read().decode('utf-8')
     
     print("Extracting data...")
